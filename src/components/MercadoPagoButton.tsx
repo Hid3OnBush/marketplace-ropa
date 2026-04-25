@@ -3,6 +3,7 @@ import { initMercadoPago, Wallet } from "@mercadopago/sdk-react";
 import { saveCheckoutSnapshot } from "../utils/checkoutStorage";
 
 const MP_PUBLIC_KEY = "APP_USR-5e8d641f-fbbb-4c1f-ac73-709138c0f06c";
+const MP_BACKEND_URL = "https://mercadopago-backend-production.up.railway.app";
 
 interface MercadoPagoButtonProps {
   items: {
@@ -23,10 +24,7 @@ interface MercadoPagoButtonProps {
   };
 }
 
-function MercadoPagoButton({
-  items,
-  checkoutData,
-}: MercadoPagoButtonProps) {
+function MercadoPagoButton({ items, checkoutData }: MercadoPagoButtonProps) {
   const [preferenceId, setPreferenceId] = useState("");
 
   useEffect(() => {
@@ -51,7 +49,7 @@ function MercadoPagoButton({
         createdAt: new Date().toISOString(),
       });
 
-      const response = await fetch("http://localhost:3001/create_preference", {
+      const response = await fetch(`${MP_BACKEND_URL}/create_preference`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
