@@ -17,7 +17,12 @@ function Products() {
         const response = await fetch(`${API_URL}/products`);
         const data = await response.json();
 
-        setProductList(data);
+        const mappedProducts = data.map((product: any) => ({
+          ...product,
+          price: Number(product.price),
+        }));
+
+        setProductList(mappedProducts);
       } catch (error) {
         console.error("Error cargando productos:", error);
       } finally {
