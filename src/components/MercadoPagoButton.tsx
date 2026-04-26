@@ -101,3 +101,5 @@ Pagar con Mercado Pago
 </div>
 );
 }
+
+export default MercadoPagoButton;
