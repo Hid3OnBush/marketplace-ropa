@@ -20,12 +20,14 @@ import AdminOrders from "./pages/AdminOrders";
 import Account from "./pages/Account";
 import PaymentResult from "./pages/PaymentResult";
 import CustomerRoute from "./components/CustomerRoute";
+import ScrollToTop from "./components/ScrollToTop";
 
 function App() {
   return (
     <AuthProvider>
       <CartProvider>
         <BrowserRouter>
+          <ScrollToTop />
           <div className="min-h-screen flex flex-col">
             <Navbar />
             <Toast />
