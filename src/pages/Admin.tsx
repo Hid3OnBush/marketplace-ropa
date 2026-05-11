@@ -1,21 +1,43 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Product } from "../types/product";
 import type { Order } from "../orders/orderStorage";
 import { Link } from "react-router-dom";
 import API_URL from "../api/api";
+import { products as demoProducts } from "../data/products";
+import {
+  applyProductOverrides,
+  removeProductOverride,
+  saveProductNameOverride,
+  saveProductOverride,
+} from "../utils/productStorage";
+import {
+  DEFAULT_PRODUCT_SIZES,
+  DEFAULT_PRODUCT_STOCK,
+  getDiscountedPrice,
+  isProductOnSale,
+  normalizeProduct,
+} from "../utils/productHelpers";
+
+const SIZE_OPTIONS = ["XS", "S", "M", "L", "XL", "XXL", "28", "30", "32", "34", "36"];
 
 function Admin() {
   const [productList, setProductList] = useState<Product[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const productFormRef = useRef<HTMLDivElement | null>(null);
 
   const [formData, setFormData] = useState({
     name: "",
     price: "",
     image: "",
     category: "",
+    gender: "Unisex",
     description: "",
+    sizes: DEFAULT_PRODUCT_SIZES,
+    stock: DEFAULT_PRODUCT_STOCK.toString(),
+    isOnSale: false,
+    discountPercentage: "",
   });
 
   const loadProducts = async () => {
@@ -23,9 +45,16 @@ function Admin() {
       setIsLoadingProducts(true);
       const response = await fetch(`${API_URL}/products`);
       const data = await response.json();
-      setProductList(data);
+      setProductList(
+        applyProductOverrides(
+        Array.isArray(data) && data.length > 0
+          ? data.map(normalizeProduct)
+          : demoProducts.map(normalizeProduct)
+        )
+      );
     } catch (error) {
       console.error("Error cargando productos:", error);
+      setProductList(applyProductOverrides(demoProducts.map(normalizeProduct)));
     } finally {
       setIsLoadingProducts(false);
     }
@@ -58,6 +87,7 @@ function Admin() {
         price: Number(item.price),
         image: item.image,
         quantity: item.quantity,
+        selectedSize: item.selected_size || item.selectedSize,
       })),
     }));
 
@@ -137,17 +167,48 @@ useEffect(() => {
       price: "",
       image: "",
       category: "",
+      gender: "Unisex",
       description: "",
+      sizes: DEFAULT_PRODUCT_SIZES,
+      stock: DEFAULT_PRODUCT_STOCK.toString(),
+      isOnSale: false,
+      discountPercentage: "",
     });
     setEditingId(null);
   };
 
   const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: React.ChangeEvent<
+      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
+    >
   ) => {
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
+    });
+  };
+
+  const handleSaleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const enabled = e.target.checked;
+
+    setFormData((prev) => ({
+      ...prev,
+      isOnSale: enabled,
+      discountPercentage: enabled ? prev.discountPercentage || "10" : "",
+    }));
+  };
+
+  const handleSizeToggle = (size: string) => {
+    setFormData((prev) => {
+      const sizeIsSelected = prev.sizes.includes(size);
+      const nextSizes = sizeIsSelected
+        ? prev.sizes.filter((item) => item !== size)
+        : [...prev.sizes, size];
+
+      return {
+        ...prev,
+        sizes: nextSizes,
+      };
     });
   };
 
@@ -175,6 +236,11 @@ useEffect(() => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const savedEditingId = editingId;
+    const stock = Number(formData.stock);
+    const discountPercentage = formData.isOnSale
+      ? Number(formData.discountPercentage)
+      : 0;
 
     const productData = {
       name: formData.name.trim(),
@@ -183,14 +249,24 @@ useEffect(() => {
         formData.image.trim() ||
         "https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=800&q=80",
       category: formData.category.trim(),
+      gender: formData.gender,
       description: formData.description.trim(),
+      sizes: formData.sizes.length > 0 ? formData.sizes : DEFAULT_PRODUCT_SIZES,
+      stock,
+      discountPercentage,
+      discount_percentage: discountPercentage,
     };
 
     if (
       !productData.name ||
       !productData.category ||
+      !productData.gender ||
       !productData.description ||
-      productData.price <= 0
+      productData.price <= 0 ||
+      productData.stock < 0 ||
+      (formData.isOnSale && discountPercentage <= 0) ||
+      discountPercentage < 0 ||
+      discountPercentage > 90
     ) {
       alert("Completa correctamente todos los campos.");
       return;
@@ -205,18 +281,58 @@ useEffect(() => {
           },
           body: JSON.stringify(productData),
         });
+
+        saveProductOverride(editingId, {
+          gender: productData.gender,
+          sizes: productData.sizes,
+          stock: productData.stock,
+          discountPercentage: productData.discountPercentage,
+        });
+        saveProductNameOverride(productData.name, {
+          gender: productData.gender,
+          sizes: productData.sizes,
+          stock: productData.stock,
+          discountPercentage: productData.discountPercentage,
+        });
       } else {
-        await fetch(`${API_URL}/products`, {
+        const response = await fetch(`${API_URL}/products`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify(productData),
         });
+
+        const savedProduct = await response.json().catch(() => null);
+        const savedProductId = Number(savedProduct?.id);
+
+        if (savedProductId) {
+          saveProductOverride(savedProductId, {
+            gender: productData.gender,
+            sizes: productData.sizes,
+            stock: productData.stock,
+            discountPercentage: productData.discountPercentage,
+          });
+        }
+
+        saveProductNameOverride(productData.name, {
+          gender: productData.gender,
+          sizes: productData.sizes,
+          stock: productData.stock,
+          discountPercentage: productData.discountPercentage,
+        });
       }
 
       await loadProducts();
       resetForm();
+
+      if (savedEditingId) {
+        setTimeout(() => {
+          document
+            .getElementById(`admin-product-${savedEditingId}`)
+            ?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 100);
+      }
     } catch (error) {
       console.error("Error guardando producto:", error);
       alert("No se pudo guardar el producto.");
@@ -234,6 +350,7 @@ useEffect(() => {
       await fetch(`${API_URL}/products/${id}`, {
         method: "DELETE",
       });
+      removeProductOverride(id);
 
       await loadProducts();
 
@@ -253,13 +370,22 @@ useEffect(() => {
       price: product.price.toString(),
       image: product.image,
       category: product.category,
+      gender: product.gender,
       description: product.description,
+      sizes: product.sizes,
+      stock: product.stock.toString(),
+      isOnSale: (product.discountPercentage ?? 0) > 0,
+      discountPercentage: product.discountPercentage
+        ? product.discountPercentage.toString()
+        : "",
     });
 
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
+    setTimeout(() => {
+      productFormRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 0);
   };
 
   return (
@@ -442,7 +568,10 @@ useEffect(() => {
         </section>
 
         <section className="grid lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-1 bg-white rounded-[2rem] sm:rounded-[2.5rem] border border-black/5 shadow-[0_20px_60px_rgba(0,0,0,0.06)] p-6 sm:p-8 h-fit">
+          <div
+            ref={productFormRef}
+            className="lg:col-span-1 bg-white rounded-[2rem] sm:rounded-[2.5rem] border border-black/5 shadow-[0_20px_60px_rgba(0,0,0,0.06)] p-6 sm:p-8 h-fit"
+          >
             <div className="flex items-center justify-between mb-6 gap-4">
               <h2 className="text-2xl font-extrabold text-[#111827]">
                 {editingId ? "Editar producto" : "Agregar producto"}
@@ -522,6 +651,17 @@ useEffect(() => {
                 required
               />
 
+              <select
+                name="gender"
+                value={formData.gender}
+                onChange={handleChange}
+                className="w-full border border-black/10 bg-[#fcfbf8] p-4 rounded-2xl outline-none focus:ring-2 focus:ring-[#7a1f2b]"
+              >
+                <option value="Unisex">Unisex</option>
+                <option value="Mujer">Mujer</option>
+                <option value="Hombre">Hombre</option>
+              </select>
+
               <textarea
                 name="description"
                 placeholder="Descripción"
@@ -530,6 +670,78 @@ useEffect(() => {
                 className="w-full border border-black/10 bg-[#fcfbf8] p-4 rounded-2xl outline-none focus:ring-2 focus:ring-[#7a1f2b] min-h-[120px]"
                 required
               />
+
+              <div className="bg-[#fcfbf8] border border-black/5 rounded-2xl p-4">
+                <p className="text-sm font-bold text-[#111827]">
+                  Tallas habilitadas
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {SIZE_OPTIONS.map((size) => {
+                    const isSelected = formData.sizes.includes(size);
+
+                    return (
+                      <button
+                        key={size}
+                        type="button"
+                        onClick={() => handleSizeToggle(size)}
+                        className={`min-w-12 px-3 py-2 rounded-xl border font-bold transition ${
+                          isSelected
+                            ? "border-[#7a1f2b] bg-[#fff7f8] text-[#7a1f2b]"
+                            : "border-black/10 bg-white text-[#111827] hover:bg-[#efeae1]"
+                        }`}
+                      >
+                        {size}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-gray-500 mt-3">
+                  Activa solo las tallas disponibles para esta prenda.
+                </p>
+              </div>
+
+              <input
+                type="number"
+                name="stock"
+                placeholder="Stock disponible"
+                value={formData.stock}
+                onChange={handleChange}
+                className="w-full border border-black/10 bg-[#fcfbf8] p-4 rounded-2xl outline-none focus:ring-2 focus:ring-[#7a1f2b]"
+                required
+                min="0"
+              />
+
+              <div className="bg-[#fcfbf8] border border-black/5 rounded-2xl p-4 space-y-4">
+                <label className="flex items-center justify-between gap-4">
+                  <span>
+                    <span className="block text-sm font-bold text-[#111827]">
+                      Habilitar oferta
+                    </span>
+                    <span className="block text-xs text-gray-500 mt-1">
+                      Muestra esta prenda en rebajas y aplica descuento.
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={formData.isOnSale}
+                    onChange={handleSaleChange}
+                    className="h-5 w-5 accent-[#7a1f2b]"
+                  />
+                </label>
+
+                {formData.isOnSale && (
+                  <input
+                    type="number"
+                    name="discountPercentage"
+                    placeholder="Porcentaje de descuento"
+                    value={formData.discountPercentage}
+                    onChange={handleChange}
+                    className="w-full border border-black/10 bg-white p-4 rounded-2xl outline-none focus:ring-2 focus:ring-[#7a1f2b]"
+                    min="1"
+                    max="90"
+                  />
+                )}
+              </div>
 
               <button
                 type="submit"
@@ -560,8 +772,13 @@ useEffect(() => {
               </div>
             ) : (
               <div className="grid gap-5">
-                {productList.map((product) => (
+                {productList.map((product) => {
+                  const productIsOnSale = isProductOnSale(product);
+                  const salePrice = getDiscountedPrice(product);
+
+                  return (
                   <div
+                    id={`admin-product-${product.id}`}
                     key={product.id}
                     className="border border-black/8 rounded-[1.75rem] p-4 flex flex-col md:flex-row gap-4 items-center bg-[#fffdfa]"
                   >
@@ -581,12 +798,26 @@ useEffect(() => {
                       <p className="text-gray-600 mt-2 text-sm leading-relaxed">
                         {product.description}
                       </p>
+                      <p className="text-gray-500 mt-2 text-xs">
+                        Genero: {product.gender} | Stock: {product.stock} | Tallas:{" "}
+                        {product.sizes.join(", ")}
+                      </p>
                     </div>
 
                     <div className="text-center md:text-right">
                       <p className="text-2xl font-extrabold text-[#111827]">
-                        ${product.price}
+                        ${productIsOnSale ? salePrice : product.price}
                       </p>
+                      {productIsOnSale && (
+                        <div className="mt-1">
+                          <p className="text-sm text-gray-400 line-through">
+                            ${product.price}
+                          </p>
+                          <span className="inline-block mt-2 bg-[#7a1f2b] text-white px-3 py-1 rounded-full text-xs font-bold">
+                            Oferta -{product.discountPercentage}%
+                          </span>
+                        </div>
+                      )}
 
                       <div className="mt-4 flex flex-col gap-2">
                         <button
@@ -605,7 +836,8 @@ useEffect(() => {
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

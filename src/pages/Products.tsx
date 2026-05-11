@@ -2,11 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import ProductCard from "../components/ProductCard";
 import type { Product } from "../types/product";
 import API_URL from "../api/api";
+import { products as initialProducts } from "../data/products";
+import { applyProductOverrides } from "../utils/productStorage";
+import {
+  isProductOnSale,
+  normalizeProduct,
+} from "../utils/productHelpers";
 
 function Products() {
   const [productList, setProductList] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("Todos");
+  const [gender, setGender] = useState("Todos");
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -17,14 +24,17 @@ function Products() {
         const response = await fetch(`${API_URL}/products`);
         const data = await response.json();
 
-        const mappedProducts = data.map((product: any) => ({
-          ...product,
-          price: Number(product.price),
-        }));
+        const mappedProducts =
+          Array.isArray(data) && data.length > 0
+            ? data.map(normalizeProduct)
+            : initialProducts.map(normalizeProduct);
 
-        setProductList(mappedProducts);
+        setProductList(applyProductOverrides(mappedProducts));
       } catch (error) {
         console.error("Error cargando productos:", error);
+        setProductList(
+          applyProductOverrides(initialProducts.map(normalizeProduct))
+        );
       } finally {
         setIsLoading(false);
       }
@@ -41,19 +51,67 @@ function Products() {
     return ["Todos", ...uniqueCategories];
   }, [productList]);
 
+  const genders = useMemo(() => {
+    const uniqueGenders = Array.from(
+      new Set(productList.map((product) => product.gender))
+    );
+
+    return ["Todos", ...uniqueGenders];
+  }, [productList]);
+
   const filteredProducts = useMemo(() => {
     return productList.filter((product) => {
       const matchesCategory =
         category === "Todos" || product.category === category;
+      const matchesGender = gender === "Todos" || product.gender === gender;
 
       const matchesSearch =
         product.name.toLowerCase().includes(search.toLowerCase()) ||
         product.description.toLowerCase().includes(search.toLowerCase()) ||
-        product.category.toLowerCase().includes(search.toLowerCase());
+        product.category.toLowerCase().includes(search.toLowerCase()) ||
+        product.gender.toLowerCase().includes(search.toLowerCase());
 
-      return matchesCategory && matchesSearch;
+      return matchesCategory && matchesGender && matchesSearch;
     });
-  }, [productList, search, category]);
+  }, [productList, search, category, gender]);
+
+  const saleProducts = useMemo(() => {
+    return filteredProducts.filter(isProductOnSale).slice(0, 3);
+  }, [filteredProducts]);
+
+  const regularProducts = useMemo(() => {
+    const saleProductIds = new Set(saleProducts.map((product) => product.id));
+    return filteredProducts.filter((product) => !saleProductIds.has(product.id));
+  }, [filteredProducts, saleProducts]);
+
+  const recommendedProducts = useMemo(() => {
+    if (!search.trim() && category === "Todos" && gender === "Todos") {
+      return [];
+    }
+
+    const filteredIds = new Set(filteredProducts.map((product) => product.id));
+    const searchWords = search
+      .toLowerCase()
+      .split(" ")
+      .map((word) => word.trim())
+      .filter(Boolean);
+
+    return productList
+      .filter((product) => !filteredIds.has(product.id))
+      .filter((product) => {
+        const matchesCategory =
+          category !== "Todos" && product.category === category;
+        const matchesGender = gender !== "Todos" && product.gender === gender;
+        const searchableText =
+          `${product.name} ${product.description} ${product.category} ${product.gender}`.toLowerCase();
+        const matchesSearch = searchWords.some((word) =>
+          searchableText.includes(word)
+        );
+
+        return matchesCategory || matchesGender || matchesSearch;
+      })
+      .slice(0, 3);
+  }, [productList, filteredProducts, search, category, gender]);
 
   return (
     <div className="min-h-screen bg-[#f6f4ef]">
@@ -72,7 +130,7 @@ function Products() {
             que necesitas más rápido.
           </p>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
             <input
               type="text"
               placeholder="Buscar productos..."
@@ -92,6 +150,18 @@ function Products() {
                 </option>
               ))}
             </select>
+
+            <select
+              value={gender}
+              onChange={(e) => setGender(e.target.value)}
+              className="w-full border border-black/10 bg-[#fcfbf8] rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-[#7a1f2b]"
+            >
+              {genders.map((item) => (
+                <option key={item} value={item}>
+                  {item === "Todos" ? "Todos los generos" : item}
+                </option>
+              ))}
+            </select>
           </div>
 
           <p className="mt-4 text-sm text-gray-500">
@@ -102,6 +172,30 @@ function Products() {
                 }`}
           </p>
         </div>
+
+        {!isLoading && saleProducts.length > 0 && (
+          <section className="mb-10">
+            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-6">
+              <div>
+                <p className="text-[#7a1f2b] font-bold uppercase tracking-[0.25em] text-sm">
+                  Rebajas
+                </p>
+                <h2 className="text-2xl sm:text-3xl font-extrabold text-[#111827] mt-2">
+                  Ofertas disponibles
+                </h2>
+                <p className="text-gray-600 mt-2 text-sm">
+                  Rebajas filtradas por tu busqueda actual.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6 sm:gap-8">
+              {saleProducts.map((product) => (
+                <ProductCard key={`sale-${product.id}`} product={product} />
+              ))}
+            </div>
+          </section>
+        )}
 
         {isLoading ? (
           <div className="bg-white rounded-[2rem] border border-black/5 shadow-sm p-8 sm:p-10 text-center">
@@ -121,12 +215,34 @@ function Products() {
               Intenta con otro nombre o cambia la categoría seleccionada.
             </p>
           </div>
-        ) : (
+        ) : regularProducts.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6 sm:gap-8">
-            {filteredProducts.map((product) => (
+            {regularProducts.map((product) => (
               <ProductCard key={product.id} product={product} />
             ))}
           </div>
+        ) : null}
+
+        {!isLoading && recommendedProducts.length > 0 && (
+          <section className="mt-12">
+            <div className="mb-6">
+              <p className="text-[#7a1f2b] font-bold uppercase tracking-[0.25em] text-sm">
+                Recomendaciones
+              </p>
+              <h2 className="text-2xl sm:text-3xl font-extrabold text-[#111827] mt-2">
+                Opciones similares para ti
+              </h2>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6 sm:gap-8">
+              {recommendedProducts.map((product) => (
+                <ProductCard
+                  key={`recommendation-${product.id}`}
+                  product={product}
+                />
+              ))}
+            </div>
+          </section>
         )}
       </div>
     </div>

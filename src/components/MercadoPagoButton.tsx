@@ -12,7 +12,10 @@ name: string;
 price: number;
 image: string;
 quantity: number;
+selectedSize?: string;
 }[];
+disabled?: boolean;
+disabledMessage?: string;
 checkoutData: {
 customerName: string;
 customerEmail: string;
@@ -24,7 +27,12 @@ total: number;
 };
 }
 
-function MercadoPagoButton({ items, checkoutData }: MercadoPagoButtonProps) {
+function MercadoPagoButton({
+items,
+checkoutData,
+disabled = false,
+disabledMessage = "Completa tus datos",
+}: MercadoPagoButtonProps) {
 const [preferenceId, setPreferenceId] = useState("");
 
 useEffect(() => {
@@ -36,6 +44,22 @@ locale: "es-MX",
 const createPreference = async () => {
 try {
 const externalReference = `ORDER-${Date.now()}`;
+const shippingItem =
+checkoutData.shippingCost > 0
+? [
+{
+id: 999999,
+name:
+checkoutData.shippingMethod === "express"
+? "Envio express"
+: "Envio estandar",
+price: checkoutData.shippingCost,
+image: "",
+quantity: 1,
+},
+]
+: [];
+const paymentItems = [...items, ...shippingItem];
 
 saveCheckoutSnapshot({
 customerName: checkoutData.customerName,
@@ -55,7 +79,7 @@ headers: {
 "Content-Type": "application/json",
 },
 body: JSON.stringify({
-items,
+items: paymentItems,
 customer: {
 name: checkoutData.customerName,
 email: checkoutData.customerEmail,
@@ -89,12 +113,13 @@ return (
 {!preferenceId ? (
 <button
 onClick={createPreference}
-className="w-full bg-[#009ee3] text-white py-4 rounded-2xl font-bold hover:opacity-90 transition"
+disabled={disabled}
+className="min-h-12 w-full bg-[#111111] px-4 py-3 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-45 sm:text-sm sm:tracking-[0.18em]"
 >
-Pagar con Mercado Pago
+{disabled ? disabledMessage : "Pagar con Mercado Pago"}
 </button>
 ) : (
-<div className="bg-white rounded-2xl border border-black/5 p-4">
+<div className="border border-black/10 bg-white p-4">
 <Wallet initialization={{ preferenceId }} />
 </div>
 )}

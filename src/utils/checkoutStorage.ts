@@ -4,6 +4,7 @@ export interface CheckoutSnapshotItem {
   price: number;
   image: string;
   quantity: number;
+  selectedSize?: string;
 }
 
 export interface CheckoutSnapshot {

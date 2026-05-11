@@ -1,16 +1,9 @@
 import { Link } from "react-router-dom";
-import { useEffect, useState } from "react";
 import ProductCard from "../components/ProductCard";
-import type { Product } from "../types/product";
-import { getStoredProducts } from "../utils/productStorage";
+import { products } from "../data/products";
 
 function Home() {
-  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
-
-  useEffect(() => {
-    const storedProducts = getStoredProducts();
-    setFeaturedProducts(storedProducts.slice(0, 3));
-  }, []);
+  const featuredProducts = products.slice(0, 3);
 
   return (
     <div className="min-h-screen bg-[#f6f4ef]">

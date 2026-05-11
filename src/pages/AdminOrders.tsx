@@ -44,6 +44,7 @@ function AdminOrders() {
           price: Number(item.price),
           image: item.image,
           quantity: item.quantity,
+          selectedSize: item.selected_size || item.selectedSize,
         })),
       }));
 
@@ -312,6 +313,11 @@ function AdminOrders() {
                         <p className="text-sm text-gray-500">
                           Cantidad: {item.quantity}
                         </p>
+                        {item.selectedSize && (
+                          <p className="text-sm text-gray-500">
+                            Talla: {item.selectedSize}
+                          </p>
+                        )}
                       </div>
 
                       <p className="font-bold text-[#111827]">

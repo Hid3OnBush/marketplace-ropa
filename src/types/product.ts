@@ -4,5 +4,9 @@ export interface Product {
   price: number;
   image: string;
   category: string;
+  gender: string;
   description: string;
+  sizes: string[];
+  stock: number;
+  discountPercentage?: number;
 }
